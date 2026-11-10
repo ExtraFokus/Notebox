@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notebox</title>
+<style>
+/* ---------- Theme tokens: the whole UI is built on these 6 variables ---------- */
+:root{--bg:#fff;--fg:#000;--mute:#6b6b6b;--line:#d0d0d0;--dot:#dcdcdc;--hover:#f0f0f0}
+[data-theme=dark]{--bg:#000;--fg:#fff;--mute:#9a9a9a;--line:#3a3a3a;--dot:#262626;--hover:#161616}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  /* subtle dot-matrix background that follows the theme */
+  background:radial-gradient(var(--dot) 1px,transparent 1px) 0 0/20px 20px,var(--bg)}
+button,input,select,textarea{font:inherit;color:var(--fg)}
+
+/* ---------- Buttons ---------- */
+.btn{background:var(--bg);border:1px solid var(--fg);padding:5px 12px;border-radius:4px;cursor:pointer}
+.btn:hover,.btn.danger{background:var(--fg);color:var(--bg)}
+.btn.danger:hover{background:var(--bg);color:var(--fg)}
+.ico{background:none;border:1px solid transparent;border-radius:4px;padding:1px 6px;cursor:pointer;color:var(--mute)}
+.ico:hover,.ico.on{color:var(--fg);border-color:var(--line)}
+input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--fg);outline-offset:1px}
+
+/* ---------- Header ---------- */
+header{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--fg)}
+header h1{font-size:16px;margin:0;letter-spacing:.08em;text-transform:uppercase}
+#q{flex:1;min-width:0;max-width:460px;margin-left:auto;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:4px}
+header .sp{flex:0}
+
+/* ---------- Layout ---------- */
+.layout{display:grid;grid-template-columns:270px 1fr;min-height:calc(100vh - 53px)}
+aside{background:var(--bg);border-right:1px solid var(--line);padding:12px}
+main{padding:18px 22px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line)}header h1{display:none}}
+
+/* ---------- Sidebar ---------- */
+.addcat{display:flex;gap:6px;margin-bottom:10px}
+.addcat input{flex:1;min-width:0;padding:5px 8px;background:var(--bg);border:1px solid var(--line);border-radius:4px}
+.row{display:flex;align-items:center;gap:2px;border-radius:4px;border:1px solid transparent}
+.row:hover{background:var(--hover)}
+.row.sel{border-color:var(--fg)}
+.row .nm{flex:1;min-width:0;text-align:left;background:none;border:0;padding:6px 8px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .n{color:var(--mute);font-size:12px;margin-right:4px}
+.row.dim .nm{color:var(--mute);cursor:default}
+.ren{flex:1;min-width:0;margin:2px;padding:4px 6px;background:var(--bg);border:1px solid var(--fg);border-radius:4px}
+details.closed{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+summary{cursor:pointer;color:var(--mute);padding:4px 8px}
+
+/* ---------- Main area ---------- */
+.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.top h2{margin:0;font-size:20px;margin-right:auto}
+.top .cnt{color:var(--mute)}
+select{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 6px}
+.gh{margin:22px 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);cursor:pointer}
+.gh:hover{color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.empty{color:var(--mute);padding:30px 0}
+
+/* ---------- Note card ---------- */
+.card{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.card.pin{border-color:var(--fg)}
+.card .hd{display:flex;gap:4px;align-items:center}
+.t{flex:1;min-width:0;font-weight:600;background:none;border:0;border-bottom:1px dashed var(--line);padding:3px 2px}
+.b{min-height:100px;resize:vertical;background:none;border:1px solid var(--line);border-radius:4px;padding:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips:empty{display:none}
+.chip{background:none;border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:12px;cursor:pointer;color:var(--fg);text-decoration:none}
+.chip.co{border-style:dashed;font-family:ui-monospace,Menlo,Consolas,monospace}
+.chip:hover{background:var(--fg);color:var(--bg)}
+.ft{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mute)}
+.ft .st{flex:1;min-width:0}
+
+/* ---------- Modal & toast ---------- */
+.ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(128,128,128,.55)}
+.box{background:var(--bg);color:var(--fg);border:2px solid var(--fg);padding:20px;width:min(400px,90vw)}
+.box h2{margin:0 0 8px;font-size:17px}
+.box p{margin:0 0 16px}
+.box .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:6px 14px;border-radius:4px;z-index:30}
+</style>
+</head>
+<body>
+<header>
+  <h1>Notebox</h1>
+  <input id="q" type="search" placeholder="Search notes, categories, #tags…  ( / )" aria-label="Search">
+  <button class="btn sp" id="exp" title="Download all data as a JSON file">Export</button>
+  <button class="btn sp" id="imp" title="Load a previously exported JSON file">Import</button>
+  <input id="file" type="file" accept=".json,application/json" hidden>
+  <button class="btn sp" id="theme" title="Switch theme"></button>
+</header>
+
+<div class="layout">
+  <aside>
+    <form class="addcat" id="addcat">
+      <input id="newcat" placeholder="New category…" maxlength="80" aria-label="New category name">
+      <button class="btn">Add</button>
+    </form>
+    <div id="cats"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<div class="ov" id="modal" hidden><div class="box" role="dialog" aria-modal="true" aria-labelledby="mt">
+  <h2 id="mt"></h2><p id="mm"></p><div class="acts" id="mb"></div></div></div>
+<div id="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   1. STATE & PERSISTENCE (everything lives in localStorage)
+   ===================================================================== */
+const KEY = 'notebox.v1';
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const now = () => Date.now();
+
+/** Tiny DOM helper: el('div', {class:'x', onclick:fn}, child, 'text') */
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'value') e.value = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  e.append(...kids);
+  return e;
+}
+
+/** Sanitise categories from storage or an import file. `fresh` = always issue new ids (for merging). */
+const normCats = (arr, fresh) => arr.filter(c => c && typeof c === 'object').map(c => ({
+  id: !fresh && typeof c.id === 'string' && c.id ? c.id : uid(),
+  name: String(c.name || 'Untitled').slice(0, 80),
+  closed: !!c.closed,
+  notes: (Array.isArray(c.notes) ? c.notes : []).filter(n => n && typeof n === 'object').map(n => ({
+    id: !fresh && typeof n.id === 'string' && n.id ? n.id : uid(),
+    title: String(n.title || ''), text: String(n.text || ''), pinned: !!n.pinned,
+    created: +n.created || now(), updated: +n.updated || now()
+  }))
+}));
+
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && Array.isArray(d.categories)) {
+      return { theme: d.theme === 'dark' ? 'dark' : 'light', sort: d.sort || 'new', view: d.view || 'all', categories: normCats(d.categories) };
+    }
+  } catch (e) { /* corrupted or blocked storage: start fresh */ }
+  return { theme: 'light', sort: 'new', view: 'all', categories: normCats([{ name: 'General' }]) };
+}
+let S = load();
+let q = '';            // current search text (not persisted)
+let editing = null;    // id of category being renamed
+let closedOpen = false;
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch (e) { toast('Could not save: browser storage is full or blocked'); }
+}
+
+/* =====================================================================
+   2. SMALL UTILITIES: toast, modal, clipboard, formatting
+   ===================================================================== */
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2200);
+}
+
+/** Generic modal. buttons: [{label, danger, fn}] — the first button is focused (the safe one). */
+function ask(title, msg, buttons) {
+  $('#mt').textContent = title; $('#mm').textContent = msg;
+  const box = $('#mb'); box.replaceChildren();
+  buttons.forEach(b => box.append(el('button', {
+    class: 'btn' + (b.danger ? ' danger' : ''),
+    onclick: () => { closeModal(); if (b.fn) b.fn(); }
+  }, b.label)));
+  $('#modal').hidden = false;
+  box.firstChild.focus();
+}
+const closeModal = () => { $('#modal').hidden = true; };
+
+/** STRICT TWO-STEP DELETE: "Are you sure?" -> "Final warning" -> only then run onDone. */
+function confirmDelete(what, onDone) {
+  ask('Are you sure?', `Delete ${what}?`, [
+    { label: 'Cancel' },
+    { label: 'Yes, delete', danger: true, fn: () => ask('Final warning',
+        'Final warning: This action cannot be undone. Confirm delete?', [
+          { label: 'Cancel' },
+          { label: 'Confirm delete', danger: true, fn: onDone }
+        ]) }
+  ]);
+}
+
+function flash(btn) { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 900); }
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { // fallback for older browsers / restricted contexts
+    const t = el('textarea', { value: text }); document.body.append(t); t.select();
+    document.execCommand('copy'); t.remove();
+  }
+  flash(btn);
+}
+const fmt = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+const stampText = n => 'Created ' + fmt(n.created) + (n.updated - n.created > 1000 ? ' · Edited ' + fmt(n.updated) : '');
+
+/* =====================================================================
+   3. SMART DETECTION: coordinates + #tags
+   ===================================================================== */
+/** Finds lat/lon pairs (with map link) and 3-number sets (X Y Z, e.g. game coordinates). */
+function coords(s) {
+  const out = [];
+  s = s.replace(/(-?\d{1,2}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)/g, (m, a, b) => {
+    if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+      out.push({ text: `${a}, ${b}`, url: `https://www.openstreetmap.org/?mlat=${a}&mlon=${b}#map=15/${a}/${b}` });
+      return ' ';
+    }
+    return m;
+  });
+  for (const m of s.matchAll(/(?<![\d.\-])(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)(?![\d.])/g))
+    out.push({ text: `${m[1]} ${m[2]} ${m[3]}` });
+  return out;
+}
+
+function renderChips(box, n) {
+  box.replaceChildren();
+  const s = n.title + '\n' + n.text;
+  [...new Set([...s.matchAll(/(?:^|\s)#([\w-]+)/g)].map(m => m[1].toLowerCase()))].forEach(t =>
+    box.append(el('button', { class: 'chip', title: 'Filter by this tag', onclick: () => setQuery('#' + t) }, '#' + t)));
+  coords(s).slice(0, 6).forEach(c => {
+    box.append(el('button', { class: 'chip co', title: 'Copy coordinates', onclick: ev => copy(c.text, ev.currentTarget) }, c.text));
+    if (c.url) box.append(el('a', { class: 'chip', href: c.url, target: '_blank', rel: 'noopener' }, 'Map ↗'));
+  });
+}
+
+/* =====================================================================
+   4. SEARCH & SORT
+   ===================================================================== */
+const matches = (n, c) => !q.trim() || (n.title + ' ' + n.text + ' ' + c.name).toLowerCase().includes(q.trim().toLowerCase());
+const label = n => (n.title || n.text || '').toLowerCase();
+const SORT = {
+  new: (a, b) => b.created - a.created,
+  old: (a, b) => a.created - b.created,
+  edited: (a, b) => b.updated - a.updated,
+  az: (a, b) => label(a).localeCompare(label(b))
+};
+function setQuery(v) { q = v; $('#q').value = v; render(); }
+
+/* =====================================================================
+   5. ACTIONS
+   ===================================================================== */
+function select(id) { S.view = id; setQuery(''); save(); }
+function addCategory(name) {
+  const c = { id: uid(), name: name.trim().slice(0, 80), closed: false, notes: [] };
+  S.categories.push(c); S.view = c.id; q = ''; $('#q').value = ''; save(); render();
+}
+function closeCat(c) { c.closed = true; if (S.view === c.id) S.view = 'all'; save(); render(); }
+function delCat(c) {
+  confirmDelete(`the category “${c.name}” and its ${c.notes.length} note(s)`, () => {
+    S.categories = S.categories.filter(x => x !== c);
+    if (S.view === c.id) S.view = 'all';
+    save(); render();
+  });
+}
+function addNote(c) {
+  const n = { id: uid(), title: '', text: '', pinned: false, created: now(), updated: now() };
+  c.notes.unshift(n); save(); render();
+  const t = document.querySelector(`[data-id="${n.id}"] .t`);
+  if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); }
+}
+function delNote(n, c) {
+  confirmDelete('this note' + (n.title ? ` “${n.title}”` : ''), () => { c.notes = c.notes.filter(x => x !== n); save(); render(); });
+}
+
+/* =====================================================================
+   6. RENDERING
+   ===================================================================== */
+function catRow(id, name, count, c) {
+  const row = el('div', { class: 'row' + (S.view === id && !q.trim() ? ' sel' : '') });
+  if (c && editing === c.id) {                       // inline rename
+    let done = false;
+    const commit = ok => { if (done) return; done = true; if (ok && inp.value.trim()) c.name = inp.value.trim().slice(0, 80); editing = null; save(); render(); };
+    const inp = el('input', { class: 'ren', value: c.name, maxlength: 80, 'aria-label': 'Rename category',
+      onkeydown: e => { if (e.key === 'Enter') commit(true); if (e.key === 'Escape') commit(false); },
+      onblur: () => commit(true) });
+    row.append(inp); setTimeout(() => { inp.focus(); inp.select(); });
+    return row;
+  }
+  row.append(el('button', { class: 'nm', onclick: () => select(id), title: name }, name),
+             el('span', { class: 'n' }, String(count)));
+  if (c) row.append(
+    el('button', { class: 'ico', title: 'Rename', onclick: () => { editing = c.id; renderSide(); } }, '✎'),
+    el('button', { class: 'ico', title: 'Close category (stays saved)', onclick: () => closeCat(c) }, '–'),
+    el('button', { class: 'ico', title: 'Delete category', onclick: () => delCat(c) }, '×'));
+  return row;
+}
+
+function renderSide() {
+  const box = $('#cats'); box.replaceChildren();
+  const searching = !!q.trim();
+  box.append(catRow('all', 'All notes', S.categories.reduce((a, c) => a + c.notes.length, 0)));
+  S.categories.filter(c => !c.closed).forEach(c => {
+    const cnt = searching ? c.notes.filter(n => matches(n, c)).length : c.notes.length;
+    if (searching && !cnt) return;                  // search also filters the category list
+    box.append(catRow(c.id, c.name, cnt, c));
+  });
+  const closed = S.categories.filter(c => c.closed);
+  if (closed.length) {                              // collapsed categories live here, fully saved
+    const d = el('details', { class: 'closed' }, el('summary', {}, `Closed (${closed.length})`));
+    d.open = closedOpen; d.addEventListener('toggle', () => closedOpen = d.open);
+    closed.forEach(c => d.append(el('div', { class: 'row dim' },
+      el('span', { class: 'nm' }, c.name), el('span', { class: 'n' }, String(c.notes.length)),
+      el('button', { class: 'ico', title: 'Reopen', onclick: () => { c.closed = false; save(); render(); } }, 'Open'),
+      el('button', { class: 'ico', title: 'Delete category', onclick: () => delCat(c) }, '×'))));
+    box.append(d);
+  }
+}
+
+function card(n, c) {
+  const chips = el('div', { class: 'chips' });
+  const stamp = el('span', { class: 'st' }, stampText(n));
+  const refresh = () => { renderChips(chips, n); stamp.textContent = stampText(n); };
+  const title = el('input', { class: 't', placeholder: 'Title', value: n.title, 'aria-label': 'Note title' });
+  const body = el('textarea', { class: 'b', placeholder: 'Text, coordinates, reminders… (use #tags)', value: n.text, 'aria-label': 'Note text' });
+  const onEdit = () => { n.title = title.value; n.text = body.value; n.updated = now(); save(); refresh(); };
+  title.addEventListener('input', onEdit); body.addEventListener('input', onEdit);
+  refresh();
+  return el('div', { class: 'card' + (n.pinned ? ' pin' : ''), 'data-id': n.id },
+    el('div', { class: 'hd' }, title,
+      el('button', { class: 'ico' + (n.pinned ? ' on' : ''), title: n.pinned ? 'Unpin' : 'Pin to top',
+        onclick: () => { n.pinned = !n.pinned; save(); render(); } }, n.pinned ? '★' : '☆')),
+    body, chips,
+    el('div', { class: 'ft' }, stamp,
+      el('button', { class: 'ico', title: 'Copy note text to clipboard', onclick: ev => copy((n.text.trim() || n.title), ev.currentTarget) }, 'Copy'),
+      el('button', { class: 'ico', title: 'Delete note', onclick: () => delNote(n, c) }, 'Delete')));
+}
+
+function renderMain() {
+  const m = $('#main'); m.replaceChildren();
+  const searching = !!q.trim();
+  const cat = !searching && S.categories.find(c => c.id === S.view && !c.closed);
+  const groups = cat ? [cat] : S.categories.filter(c => searching || !c.closed);
+  const shown = groups.map(c => ({ c, notes: c.notes.filter(n => matches(n, c)).sort((a, b) => (b.pinned - a.pinned) || SORT[S.sort](a, b)) }))
+                      .filter(g => cat || g.notes.length);
+  const count = shown.reduce((a, g) => a + g.notes.length, 0);
+
+  const sort = el('select', { 'aria-label': 'Sort notes', onchange: e => { S.sort = e.target.value; save(); renderMain(); } },
+    ...[['new', 'Newest first'], ['old', 'Oldest first'], ['edited', 'Recently edited'], ['az', 'A → Z']]
+      .map(([v, t]) => el('option', { value: v }, t)));
+  sort.value = S.sort;
+  m.append(el('div', { class: 'top' },
+    el('h2', {}, searching ? `Search: “${q.trim()}”` : cat ? cat.name : 'All notes'),
+    el('span', { class: 'cnt' }, `${count} note${count === 1 ? '' : 's'}`),
+    sort,
+    cat ? el('button', { class: 'btn', onclick: () => addNote(cat) }, '+ Note') : ''));
+
+  if (!count) {
+    m.append(el('div', { class: 'empty' }, searching ? 'No matches.' : cat ? 'No notes yet. Click “+ Note”.'
+      : S.categories.length ? 'Nothing here yet. Choose a category and add a note.' : 'Create a category to begin.'));
+    return;
+  }
+  shown.forEach(({ c, notes }) => {
+    if (!cat) m.append(el('div', { class: 'gh', onclick: () => select(c.id), title: 'Open category' }, c.name + (c.closed ? ' (closed)' : '')));
+    m.append(el('div', { class: 'grid' }, ...notes.map(n => card(n, c))));
+  });
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = S.theme;
+  $('#theme').textContent = S.theme === 'dark' ? 'White' : 'Black';   // shows the theme you will switch to
+}
+function render() { applyTheme(); renderSide(); renderMain(); }
+
+/* =====================================================================
+   7. EXPORT / IMPORT
+   ===================================================================== */
+function exportData() {
+  const data = { app: 'notebox', version: 1, exported: new Date().toISOString(), categories: S.categories };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const a = el('a', { href: url, download: `notebox-backup-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('Backup downloaded');
+}
+
+async function importFile(file) {
+  let d; try { d = JSON.parse(await file.text()); } catch (e) { /* handled below */ }
+  const arr = Array.isArray(d) ? d : d && d.categories;
+  if (!Array.isArray(arr)) return toast('Not a valid Notebox backup file');
+  const cats = normCats(arr, true);
+  const total = cats.reduce((a, c) => a + c.notes.length, 0);
+  ask('Import backup', `Found ${cats.length} categories with ${total} notes. Merge them into your current data, or replace everything?`, [
+    { label: 'Cancel' },
+    { label: 'Merge', fn: () => { S.categories.push(...cats); save(); render(); toast('Merged'); } },
+    { label: 'Replace all', danger: true, fn: () => ask('Final warning',
+        'This replaces ALL current data and cannot be undone. Continue?', [
+          { label: 'Cancel' },
+          { label: 'Replace everything', danger: true, fn: () => { S.categories = cats; S.view = 'all'; save(); render(); toast('Imported'); } }
+        ]) }
+  ]);
+}
+
+/* =====================================================================
+   8. EVENT WIRING
+   ===================================================================== */
+$('#addcat').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = $('#newcat').value.trim(); if (!v) return;
+  $('#newcat').value = ''; addCategory(v);
+});
+$('#q').addEventListener('input', e => { q = e.target.value; render(); });
+$('#theme').addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; save(); applyTheme(); });
+$('#exp').addEventListener('click', exportData);
+$('#imp').addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (!$('#modal').hidden) closeModal(); else if (document.activeElement === $('#q')) setQuery(''); }
+  if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
+});
+$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+
+render();
+})();
+</script>
+</body>
+</html>
