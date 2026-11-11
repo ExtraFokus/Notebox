@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notebox</title>
+<style>
+/* =====================================================================
+   THEME TOKENS: --bg/--fg/--mute/--line/--dot/--hover are computed by JS
+   (white -> light gray -> slate -> dark gray -> black), everything below
+   uses only these variables. Colors appear only on note accents + red nuke.
+   ===================================================================== */
+:root{--bg:#fff;--fg:#000;--mute:#666;--line:#cfcfcf;--dot:#e3e3e3;--hover:#eee;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--sbw:270px;--op:100%;
+  --gap:14px;--cp:10px;--red:#d90000}
+body[data-font=serif]{--font:Georgia,"Times New Roman",serif}
+body[data-font=mono]{--font:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{color-scheme:light}
+body{margin:0;color:var(--fg);font:14px/1.45 var(--font);background-color:var(--bg)}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* Background patterns (follow the theme through --dot) */
+body[data-pattern=dots]{background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:20px 20px}
+body[data-pattern=grid]{background-image:linear-gradient(var(--dot) 1px,transparent 1px),linear-gradient(90deg,var(--dot) 1px,transparent 1px);background-size:24px 24px}
+body[data-pattern=stripes]{background-image:repeating-linear-gradient(90deg,var(--dot) 0 1px,transparent 1px 16px)}
+
+/* Subtle, fast transitions (this is what makes the grayscale slider feel smooth) */
+body,header,aside,.card,.box,.panel,.menu,.btn,.ico,input,select,textarea{transition:background-color .18s,border-color .18s,color .18s}
+
+/* ---------- Buttons ---------- */
+.btn{background:var(--bg);border:1px solid var(--fg);padding:5px 12px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.btn:not(:disabled):hover{background:var(--fg);color:var(--bg)}
+.btn.danger{background:var(--fg);color:var(--bg)}
+.btn.danger:not(:disabled):hover{background:var(--bg);color:var(--fg)}
+.btn.redb{border-color:var(--red);color:var(--red)}
+.btn.redb:not(:disabled):hover{background:var(--red);color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.ico{background:none;border:1px solid transparent;border-radius:4px;padding:1px 6px;cursor:pointer;color:var(--mute)}
+.ico:hover:not(:disabled),.ico.on{color:var(--fg);border-color:var(--line)}
+.ico:disabled{opacity:.35;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--fg);outline-offset:1px}
+select,.num{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 6px;max-width:215px}
+.num{width:64px}
+
+/* ---------- Header ---------- */
+header{position:sticky;top:0;z-index:5;height:52px;display:flex;gap:8px;align-items:center;padding:0 14px;background:var(--bg);border-bottom:1px solid var(--fg)}
+header h1{font-size:16px;margin:0;letter-spacing:.08em;text-transform:uppercase}
+#q{flex:1;min-width:0;max-width:460px;margin-left:auto;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:4px}
+.badge{border:1px solid var(--fg);border-radius:99px;padding:1px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+#gear{display:flex;align-items:center;padding:5px 8px}
+
+/* Backup reminder banner (positioned by JS right under the Export button) */
+.remind{position:fixed;z-index:8;display:flex;gap:10px;align-items:flex-start;max-width:min(320px,calc(100vw - 16px));
+  padding:8px 8px 8px 12px;background:var(--bg);border:2px solid var(--fg);border-radius:4px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+
+/* ---------- Layout ---------- */
+.layout{display:grid;grid-template-columns:var(--sbw) 1fr;min-height:calc(100vh - 52px)}
+aside{position:sticky;top:52px;height:calc(100vh - 52px);display:flex;flex-direction:column;background:var(--bg);border-right:1px solid var(--line);padding:12px}
+#cats{flex:1;min-height:0;overflow:auto}
+#trashrow{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+main{padding:18px 22px;min-width:0}
+@media(max-width:760px){
+  .layout{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  #cats{max-height:36vh}
+  header h1{display:none}
+}
+
+/* ---------- Sidebar ---------- */
+.addcat{display:flex;gap:6px;margin-bottom:10px}
+.addcat input{flex:1;min-width:0;padding:5px 8px;background:var(--bg);border:1px solid var(--line);border-radius:4px}
+.row{display:flex;align-items:center;gap:2px;border-radius:4px;border:1px solid transparent}
+.row:hover{background:var(--hover)}
+.row.sel{border-color:var(--fg)}
+.row .nm{flex:1;min-width:0;text-align:left;background:none;border:0;padding:6px 8px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .n{color:var(--mute);font-size:12px;margin-right:2px}
+.row.dim .nm{color:var(--mute)}
+.ren{flex:1;min-width:0;margin:2px;padding:4px 6px;background:var(--bg);border:1px solid var(--fg);border-radius:4px}
+details.closed{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+summary{cursor:pointer;color:var(--mute);padding:4px 8px}
+.hint{color:var(--mute);font-size:12px;padding:6px 8px}
+
+/* ---------- Main ---------- */
+.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.top h2{margin:0;font-size:20px;margin-right:auto}
+.cnt{color:var(--mute)}
+.gh{margin:22px 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);cursor:pointer}
+.gh:hover{color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:var(--gap)}
+.empty{color:var(--mute);padding:30px 0}
+.hint2{color:var(--mute);margin:-6px 0 14px}
+
+/* ---------- Note card (opacity slider drives --op) ---------- */
+.card{--cardbg:color-mix(in srgb,var(--bg) var(--op),transparent);
+  background:var(--bg);background:var(--cardbg);border:1px solid var(--line);border-radius:6px;padding:var(--cp);display:flex;flex-direction:column;gap:6px;min-width:0}
+.glass .card{backdrop-filter:blur(6px)}
+.card.pin{border-color:var(--fg)}
+.card.acc{border-color:var(--acc);box-shadow:inset 4px 0 0 var(--acc);background:color-mix(in srgb,var(--acc) 14%,var(--cardbg))}
+.hd{display:flex;gap:2px;align-items:center}
+.t{flex:1;min-width:0;font-weight:600;background:none;border:0;border-bottom:1px dashed var(--line);padding:3px 2px}
+.b{min-height:100px;resize:vertical;background:none;border:1px solid var(--line);border-radius:4px;padding:6px;font-size:13px}
+.ro .t,.ro .b,.t[readonly],.b[readonly]{cursor:default}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips:empty{display:none}
+.chip{background:none;border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:12px;cursor:pointer;color:var(--fg);text-decoration:none}
+.chip.co{border-style:dashed;font-family:ui-monospace,Menlo,Consolas,monospace}
+.chip:hover{background:var(--fg);color:var(--bg)}
+.dup{font-size:12px;color:var(--mute);font-style:italic}
+.ft{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:12px;color:var(--mute)}
+.ft .sp{margin-left:auto}
+.lk{border:1px solid var(--line);border-radius:3px;padding:0 5px;font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.prev{white-space:pre-wrap;word-break:break-word;max-height:130px;overflow:auto;border:1px solid var(--line);border-radius:4px;padding:6px;font-size:13px}
+.acts2{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- Compact view ---------- */
+body.compact{--gap:6px;--cp:5px;font-size:12.5px;line-height:1.3}
+.compact main{padding:10px 12px}
+.compact aside{padding:8px}
+.compact .grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.compact .card{gap:3px;border-radius:4px}
+.compact .b{min-height:38px;padding:3px 5px;font-size:12px}
+.compact .row .nm{padding:3px 8px}
+.compact .top{margin-bottom:8px}.compact .gh{margin:12px 0 6px}
+.compact .ft{font-size:11px}
+.compact .chips{gap:3px}.compact .chip{padding:0 7px;font-size:11px}
+
+/* ---------- Overlays: settings panel, modal, menu, toast ---------- */
+.ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(128,128,128,.55)}
+#setov{z-index:20;justify-content:flex-end;align-items:stretch;background:rgba(128,128,128,.35)}
+#modal{z-index:40}
+.panel{width:min(440px,100vw);overflow:auto;background:var(--bg);border-left:2px solid var(--fg);padding:0 20px 30px}
+.ph{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;background:var(--bg);padding:14px 0 8px;border-bottom:1px solid var(--fg)}
+.ph h2{margin:0;font-size:18px}
+.panel h3{margin:24px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--mute)}
+.set{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.set.stack{flex-direction:column;align-items:stretch;gap:8px}
+.set.off{opacity:.45}
+.line{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.lbl{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lbl small,.set small{color:var(--mute);font-size:12px}
+.rg{display:flex;align-items:center;gap:8px}
+.rg output{min-width:48px;text-align:right;font-size:12px;color:var(--mute)}
+input[type=range]{accent-color:var(--fg);width:150px}
+input[data-k=gray]{width:100%;-webkit-appearance:none;appearance:none;height:10px;border:1px solid var(--fg);border-radius:5px;
+  background:linear-gradient(90deg,#fff,#d4d4d4 25%,#707070 50%,#2a2a2a 75%,#000)}
+input[data-k=gray]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--bg);border:2px solid var(--fg);cursor:pointer}
+input[data-k=gray]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--bg);border:2px solid var(--fg);cursor:pointer}
+.ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--mute)}
+.rd{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.sw input{-webkit-appearance:none;appearance:none;width:38px;height:22px;margin:0;border:1px solid var(--fg);border-radius:22px;position:relative;cursor:pointer;background:var(--bg);transition:background-color .15s}
+.sw input::before{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--fg);transition:transform .15s,background-color .15s}
+.sw input:checked{background:var(--fg)}
+.sw input:checked::before{transform:translateX(16px);background:var(--bg)}
+.sw input:disabled{opacity:.4;cursor:not-allowed}
+
+.box{background:var(--bg);color:var(--fg);border:2px solid var(--fg);padding:20px;width:min(440px,92vw);max-height:92vh;overflow:auto}
+.box h2{margin:0 0 8px;font-size:17px}
+.box p{margin:0 0 14px}
+#mx{margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+#mx:empty{display:none}
+.qx{display:flex;gap:8px;flex-wrap:wrap}
+.box .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mvsel{max-width:none;width:100%}
+
+/* Striking red nuclear button with a pulsing 10s progress fill */
+.nuke{position:relative;overflow:hidden;width:100%;padding:16px 10px;border:2px solid var(--red);border-radius:4px;background:#3d0000;color:#fff;
+  font-weight:800;letter-spacing:.1em;cursor:not-allowed}
+.nuke .fill{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--red);animation:fill 10s linear forwards,pulse .9s ease-in-out infinite}
+.nuke .txt{position:relative;z-index:1}
+.nuke.ready{background:var(--red);cursor:pointer}
+.nuke.ready .fill{animation:none;width:100%}
+.nuke.ready:hover{background:#ff1a1a}
+@keyframes fill{to{width:100%}}
+@keyframes pulse{50%{opacity:.55}}
+@media(prefers-reduced-motion:reduce){.nuke .fill{animation:fill 10s linear forwards}}
+
+.menu{position:fixed;z-index:50;min-width:200px;background:var(--bg);color:var(--fg);border:1px solid var(--fg);border-radius:4px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.mi{display:block;width:100%;text-align:left;background:none;border:0;border-radius:3px;padding:7px 10px;cursor:pointer}
+.mi:not(:disabled):hover{background:var(--fg);color:var(--bg)}
+.mi:disabled{opacity:.4;cursor:not-allowed}
+.cols{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 10px}
+.cl{font-size:12px;color:var(--mute);margin-right:4px}
+.dot{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);padding:0;cursor:pointer;line-height:1;font-size:12px;background:var(--bg);color:var(--mute)}
+.dot.on{outline:2px solid var(--fg);outline-offset:1px}
+.dot:disabled{opacity:.4;cursor:not-allowed}
+
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:60;display:flex;gap:12px;align-items:center;
+  background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:4px;max-width:92vw}
+.tact{background:none;border:0;border-bottom:1px solid currentColor;color:inherit;cursor:pointer;padding:0;font-weight:700}
+</style>
+</head>
+<body data-font="sans" data-pattern="dots">
+
+<header>
+  <h1>Notebox</h1>
+  <span class="badge" id="robadge" hidden>Read-only</span>
+  <input id="q" type="search" aria-label="Search">
+  <button class="btn" id="exp" title="Download all data as a JSON file">Export</button>
+  <button class="btn" id="imp" title="Load a previously exported JSON file">Import</button>
+  <input id="file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+  <button class="btn" id="theme" title="Switch theme"></button>
+  <button class="btn" id="gear" aria-label="Settings" title="Settings">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.6"/><path d="M12 2.5v2.9M12 18.6v2.9M2.5 12h2.9M18.6 12h2.9M5.3 5.3l2 2M16.7 16.7l2 2M5.3 18.7l2-2M16.7 7.3l2-2"/></svg>
+  </button>
+</header>
+
+<div class="remind" id="remind" role="status" hidden>
+  <span>It has been a while since you last backed up your data!</span>
+  <button class="ico" id="remx" aria-label="Dismiss reminder">✕</button>
+</div>
+
+<div class="layout">
+  <aside>
+    <form class="addcat" id="addcat">
+      <input id="newcat" placeholder="New category…" maxlength="80" aria-label="New category name">
+      <button class="btn">Add</button>
+    </form>
+    <div id="cats"></div>
+    <div id="trashrow"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<!-- Settings panel -->
+<div class="ov" id="setov" hidden>
+  <div class="panel" role="dialog" aria-label="Settings">
+    <div class="ph"><h2>Settings</h2><button class="ico" id="setx" aria-label="Close settings">✕</button></div>
+    <div id="setbody"></div>
+  </div>
+</div>
+
+<!-- Generic modal -->
+<div class="ov" id="modal" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="mt">
+    <h2 id="mt"></h2><p id="mm"></p><div id="mx"></div><div class="acts" id="mb"></div>
+  </div>
+</div>
+
+<div class="menu" id="menu" role="menu" hidden></div>
+<div id="toast" hidden><span id="tmsg"></span><button class="tact" id="tact" hidden></button></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   1. HELPERS & CONSTANTS
+   ===================================================================== */
+const KEY = 'notebox.v2', OLD = 'notebox.v1', DAY = 864e5;
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const now = () => Date.now();
+const p2 = n => String(n).padStart(2, '0');
+const fmtDate = t => { const d = new Date(t); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const dateStr = () => fmtDate(now()).slice(0, 10);
+const pick = (v, list, d) => list.includes(v) ? v : d;
+const num = (v, lo, hi, d) => { v = +v; return isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+
+/** Tiny DOM helper: el('div', {class:'x', onclick:fn}, child, 'text'). null/false children are skipped. */
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'value') e.value = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  e.append(...kids.filter(k => k != null && k !== false));
+  return e;
+}
+
+const COLORS = [['#ef4444', 'Red'], ['#f97316', 'Orange'], ['#eab308', 'Yellow'], ['#22c55e', 'Green'], ['#3b82f6', 'Blue'], ['#a855f7', 'Purple'], ['#ec4899', 'Pink']];
+const REMIND_VALID = ['m30', 'm45', 'hc', 'mo', ...Array.from({ length: 25 }, (_, i) => 'd' + (i + 1))];
+
+/* =====================================================================
+   2. STATE, SANITISING & PERSISTENCE (all storage access is try/catch)
+   ===================================================================== */
+function normSet(o) {
+  o = o || {};
+  return {
+    dark: !!o.dark, themeSlider: !!o.themeSlider, gray: num(o.gray, 0, 100, 0),
+    compact: !!o.compact, font: pick(o.font, ['sans', 'serif', 'mono'], 'sans'),
+    pattern: pick(o.pattern, ['solid', 'dots', 'grid', 'stripes'], 'dots'),
+    sidebarW: num(o.sidebarW, 180, 480, 270), hideEmpty: !!o.hideEmpty, opacity: num(o.opacity, 30, 100, 100),
+    pinMode: pick(o.pinMode, ['category', 'global'], 'category'), stamp: o.stamp !== false, dupes: !!o.dupes,
+    undoToast: o.undoToast !== false, counter: !!o.counter, searchScope: pick(o.searchScope, ['deep', 'titles'], 'deep'),
+    exportFmt: pick(o.exportFmt, ['pretty', 'min'], 'pretty'), readOnly: !!o.readOnly, weekly: !!o.weekly,
+    trashAuto: !!o.trashAuto, remindOn: !!o.remindOn, remindSel: pick(o.remindSel, REMIND_VALID, 'd1'),
+    remindHours: num(o.remindHours, 1, 720, 2)
+  };
+}
+const normNote = (n, fresh) => ({
+  id: !fresh && typeof n.id === 'string' && n.id ? n.id : uid(),
+  title: String(n.title || ''), text: String(n.text || ''), pinned: !!n.pinned, locked: !!n.locked,
+  color: /^#[0-9a-f]{6}$/i.test(n.color || '') ? n.color.toLowerCase() : '',
+  created: +n.created || now(), updated: +n.updated || now()
+});
+/** `fresh` = always issue new ids (used when merging an import). */
+const normCats = (arr, fresh) => arr.filter(c => c && typeof c === 'object').map(c => ({
+  id: !fresh && typeof c.id === 'string' && c.id ? c.id : uid(),
+  name: String(c.name || 'Untitled').slice(0, 80), closed: !!c.closed,
+  notes: (Array.isArray(c.notes) ? c.notes : []).filter(n => n && typeof n === 'object').map(n => normNote(n, fresh))
+}));
+const normTrash = (arr, fresh) => arr.filter(t => t && t.note && typeof t.note === 'object').map(t => ({
+  id: !fresh && t.id ? String(t.id) : uid(), catId: fresh ? '' : String(t.catId || ''),
+  catName: String(t.catName || 'Restored').slice(0, 80), deleted: +t.deleted || now(), note: normNote(t.note, fresh)
+}));
+
+function load() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* corrupted or blocked */ }
+  if (!d || !Array.isArray(d.categories)) {          // migrate from the first Notebox version
+    d = null;
+    try {
+      const o = JSON.parse(localStorage.getItem(OLD));
+      if (o && Array.isArray(o.categories)) d = { set: { dark: o.theme === 'dark' }, sort: o.sort, view: o.view, categories: o.categories };
+    } catch (e) { /* ignore */ }
+  }
+  d = d || { categories: [{ name: 'General' }] };
+  const set = normSet(d.set), categories = normCats(d.categories), trash = Array.isArray(d.trash) ? normTrash(d.trash) : [];
+  const okView = ['all', 'trash'].includes(d.view) || (d.view === 'pins' && set.pinMode === 'global') || categories.some(c => c.id === d.view && !c.closed);
+  return { set, sort: pick(d.sort, ['new', 'old', 'edited', 'az'], 'new'), view: okView ? d.view : 'all', categories, trash,
+           lastBackup: +d.lastBackup || now(), lastWeekly: +d.lastWeekly || 0, snooze: +d.snooze || 0 };
+}
+let S = load();
+let q = '', editing = null, closedOpen = false, menuBtn = null, dupCache = null, modalCleanup = null;
+
+let quotaWarned = false, saveT = 0;
+function save() {
+  clearTimeout(saveT); saveT = 0;
+  try { localStorage.setItem(KEY, JSON.stringify(S)); quotaWarned = false; return true; }
+  catch (e) { storageFail(e); return false; }
+}
+const saveSoon = () => { clearTimeout(saveT); saveT = setTimeout(save, 300); };   // debounced, for typing and sliders
+function storageFail(e) {
+  if (quotaWarned) return;                           // warn once until a save succeeds again
+  quotaWarned = true;
+  const full = e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+  openModal({
+    title: full ? 'Browser storage is full' : 'Can’t save to browser storage',
+    msg: full
+      ? 'Your browser only allows about 5 MB of local storage per site, and it is full. Your latest changes are NOT saved yet. Please export a backup now, then free up space (delete old notes or empty the Trash).'
+      : 'Your browser is blocking local storage (private mode or restricted settings?). Changes will be lost when you close this tab. Please export a backup to keep your data.',
+    buttons: [{ label: 'Export backup now', fn: () => exportAll() }, { label: 'OK' }]
+  });
+}
+addEventListener('pagehide', () => { if (saveT) save(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && saveT) save(); });
+
+/* =====================================================================
+   3. TOAST, MODALS, TWO-STEP DELETE, READ-ONLY GUARD
+   ===================================================================== */
+let toastTimer;
+function toast(msg, action, ms = 2200) {
+  const t = $('#toast'), b = $('#tact');
+  $('#tmsg').textContent = msg; b.hidden = !action;
+  if (action) { b.textContent = action.label; b.onclick = () => { t.hidden = true; clearTimeout(toastTimer); action.fn(); }; }
+  t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, ms);
+}
+
+/** Generic modal. buttons: [{label, danger, fn}] — the first button gets focus (always the safe one). */
+function openModal({ title, msg, nodes = [], buttons = [] }) {
+  closeModal();
+  $('#mt').textContent = title; $('#mm').textContent = msg || ''; $('#mm').hidden = !msg;
+  $('#mx').replaceChildren(...nodes);
+  const box = $('#mb'); box.replaceChildren();
+  buttons.forEach(b => box.append(el('button', { class: 'btn' + (b.danger ? ' danger' : ''),
+    onclick: () => { closeModal(); if (b.fn) b.fn(); } }, b.label)));
+  $('#modal').hidden = false;
+  const f = box.querySelector('button'); if (f) f.focus();
+}
+function closeModal() {
+  if (modalCleanup) { const c = modalCleanup; modalCleanup = null; c(); }
+  $('#modal').hidden = true;
+}
+const ask = (title, msg, buttons) => openModal({ title, msg, buttons });
+
+/** STRICT TWO-STEP DELETE: "Are you sure?" -> "Final warning" -> only then onDone runs. */
+function confirmDelete(what, onDone) {
+  ask('Are you sure?', `Delete ${what}?`, [
+    { label: 'Cancel' },
+    { label: 'Yes, delete', danger: true, fn: () => ask('Final warning',
+        'Final warning: This action cannot be undone. Confirm delete?', [
+          { label: 'Cancel' }, { label: 'Confirm delete', danger: true, fn: onDone }]) }
+  ]);
+}
+
+/** Global read-only mode: every mutating action calls this first. */
+function ro() {
+  if (S.set.readOnly) { toast('Read-only mode is on. Turn it off in Settings to make changes.'); return true; }
+  return false;
+}
+
+/* =====================================================================
+   4. THEME ENGINE (toggle OR grayscale slider: white > light gray > slate > dark gray > black)
+   ===================================================================== */
+const STOPS = [[0, 255], [25, 212], [50, 112], [75, 42], [100, 0]];
+function bgAt(t) {
+  for (let i = 1; i < STOPS.length; i++) {
+    if (t <= STOPS[i][0]) {
+      const [a, x] = STOPS[i - 1], [b, y] = STOPS[i], v = Math.round(x + (y - x) * (t - a) / (b - a));
+      return [v, v, v];
+    }
+  }
+  return [0, 0, 0];
+}
+function applyTheme() {
+  const s = S.set, t = s.themeSlider ? s.gray : (s.dark ? 100 : 0);
+  const bg = bgAt(t), light = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) > 117;
+  const fg = light ? [0, 0, 0] : [255, 255, 255];
+  const mix = p => `rgb(${bg.map((v, i) => Math.round(v + (fg[i] - v) * p)).join(',')})`;
+  const st = document.documentElement.style;
+  st.setProperty('--bg', `rgb(${bg.join(',')})`); st.setProperty('--fg', `rgb(${fg.join(',')})`);
+  st.setProperty('--mute', mix(.6)); st.setProperty('--line', mix(.24));
+  st.setProperty('--dot', mix(.11)); st.setProperty('--hover', mix(.08));
+  st.colorScheme = light ? 'light' : 'dark';
+}
+function applySettings() {
+  const s = S.set, b = document.body, r = document.documentElement.style;
+  b.classList.toggle('compact', s.compact); b.classList.toggle('ro', s.readOnly); b.classList.toggle('glass', s.opacity < 100);
+  b.dataset.font = s.font; b.dataset.pattern = s.pattern;
+  r.setProperty('--sbw', s.sidebarW + 'px'); r.setProperty('--op', s.opacity + '%');
+  applyTheme();
+  $('#robadge').hidden = !s.readOnly;
+  $('#q').placeholder = s.searchScope === 'titles' ? 'Search note titles…  ( / )' : 'Search titles, text & coordinates…  ( / )';
+  $('#theme').hidden = s.themeSlider; $('#theme').textContent = s.dark ? 'White' : 'Black';
+}
+
+/* =====================================================================
+   5. SMART DETECTION: coordinates + #tags
+   ===================================================================== */
+function coords(s) {
+  const out = [];
+  s = s.replace(/(-?\d{1,2}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)/g, (m, a, b) => {
+    if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+      out.push({ text: `${a}, ${b}`, url: `https://www.openstreetmap.org/?mlat=${a}&mlon=${b}#map=15/${a}/${b}` });
+      return ' ';
+    }
+    return m;
+  });
+  for (const m of s.matchAll(/(?<![\d.\-])(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)(?![\d.])/g))
+    out.push({ text: `${m[1]} ${m[2]} ${m[3]}` });
+  return out;
+}
+function renderChips(box, n) {
+  box.replaceChildren();
+  const s = n.title + '\n' + n.text;
+  [...new Set([...s.matchAll(/(?:^|\s)#([\w-]+)/g)].map(m => m[1].toLowerCase()))].forEach(t =>
+    box.append(el('button', { class: 'chip', title: 'Filter by this tag', onclick: () => setQuery('#' + t) }, '#' + t)));
+  coords(s).slice(0, 6).forEach(c => {
+    box.append(el('button', { class: 'chip co', title: 'Copy coordinates', onclick: ev => copy(c.text, ev.currentTarget) }, c.text));
+    if (c.url) box.append(el('a', { class: 'chip', href: c.url, target: '_blank', rel: 'noopener' }, 'Map ↗'));
+  });
+}
+
+/* =====================================================================
+   6. CLIPBOARD, SEARCH, SORT, DUPLICATES
+   ===================================================================== */
+function flash(btn) { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 900); }
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = el('textarea', { value: text }); document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); }
+  flash(btn);
+}
+/** Search scope setting: titles only, or deep scan (title + body + coordinates + category). Tag searches (#x) always scan the body. */
+function matches(n, c) {
+  const s = q.trim().toLowerCase(); if (!s) return true;
+  const deep = S.set.searchScope === 'deep' || s[0] === '#';
+  return (deep ? n.title + ' ' + n.text + ' ' + c.name : n.title).toLowerCase().includes(s);
+}
+const label = n => (n.title || n.text || '').toLowerCase();
+const SORT = {
+  new: (a, b) => b.created - a.created, old: (a, b) => a.created - b.created,
+  edited: (a, b) => b.updated - a.updated, az: (a, b) => label(a).localeCompare(label(b))
+};
+/** Duplicate detector: map of trimmed text -> [{n,c}], rebuilt lazily after any change. */
+function dupOf(n) {
+  const t = n.text.trim(); if (!t) return null;
+  if (!dupCache) {
+    dupCache = new Map();
+    S.categories.forEach(c => c.notes.forEach(o => { const k = o.text.trim(); if (k) (dupCache.get(k) || dupCache.set(k, []).get(k)).push({ n: o, c }); }));
+  }
+  const hit = (dupCache.get(t) || []).find(x => x.n !== n);
+  return hit ? hit.c : null;
+}
+function setQuery(v) { q = v; $('#q').value = v; render(); }
+
+/* =====================================================================
+   7. EXPORT / IMPORT
+   ===================================================================== */
+function download(name, data, fmt) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, fmt === 'min' ? undefined : 2)], { type: 'application/json' }));
+  const a = el('a', { href: url, download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportAll(fmt, opts = {}) {
+  download(`notebox-${opts.auto ? 'weekly' : 'backup'}-${dateStr()}.json`,
+    { app: 'notebox', version: 2, exported: new Date().toISOString(), categories: S.categories, trash: S.trash }, fmt || S.set.exportFmt);
+  S.lastBackup = now(); save(); checkRemind();
+  if (!$('#setov').hidden) syncSettings();
+  toast(opts.auto ? 'Weekly backup downloaded' : 'Backup downloaded');
+}
+function exportCat(c) {
+  const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'category';
+  download(`notebox-category-${slug}-${dateStr()}.json`,
+    { app: 'notebox', version: 2, kind: 'category', exported: new Date().toISOString(), categories: [c] }, S.set.exportFmt);
+  toast(`Exported “${c.name}”`);
+}
+async function importFile(file) {
+  if (ro()) return;
+  let d; try { d = JSON.parse(await file.text()); } catch (e) { /* handled below */ }
+  const arr = Array.isArray(d) ? d : d && d.categories;
+  if (!Array.isArray(arr)) return toast('Not a valid Notebox backup file');
+  const cats = normCats(arr, true), trash = d && Array.isArray(d.trash) ? normTrash(d.trash, true) : [];
+  const total = cats.reduce((a, c) => a + c.notes.length, 0);
+  ask('Import backup', `Found ${cats.length} categories with ${total} notes. Merge them into your current data, or replace everything?`, [
+    { label: 'Cancel' },
+    { label: 'Merge', fn: () => { S.categories.push(...cats); S.trash.push(...trash); save(); render(); toast('Merged'); } },
+    { label: 'Replace all', danger: true, fn: () => ask('Final warning',
+        'This replaces ALL current data and cannot be undone. Continue?', [
+          { label: 'Cancel' },
+          { label: 'Replace everything', danger: true, fn: () => { S.categories = cats; S.trash = trash; S.view = 'all'; save(); render(); toast('Imported'); } }]) }
+  ]);
+}
+
+/* =====================================================================
+   8. BACKUP REMINDER, WEEKLY AUTO-BACKUP, TRASH AUTO-EMPTY (checked every 30 s)
+   ===================================================================== */
+function remindMins() {
+  const v = S.set.remindSel;
+  if (v === 'm30') return 30; if (v === 'm45') return 45; if (v === 'hc') return S.set.remindHours * 60;
+  if (v === 'mo') return 30 * 1440; return (+v.slice(1)) * 1440;
+}
+function checkRemind() {
+  const r = $('#remind');
+  const due = S.set.remindOn && now() - Math.max(S.lastBackup, S.snooze || 0) >= remindMins() * 60000;
+  if (due && r.hidden) { r.hidden = false; placeRemind(); } else if (!due) r.hidden = true;
+}
+function placeRemind() {
+  const r = $('#remind'); if (r.hidden) return;
+  const b = $('#exp').getBoundingClientRect();
+  r.style.top = (b.bottom + 8) + 'px';
+  r.style.left = Math.max(8, Math.min(b.left, innerWidth - r.offsetWidth - 8)) + 'px';
+}
+function checkWeekly() {
+  if (!S.set.weekly) return;
+  if (!S.lastWeekly) { S.lastWeekly = now(); save(); return; }
+  if (now() - S.lastWeekly >= 7 * DAY) { S.lastWeekly = now(); exportAll(null, { auto: true }); }
+}
+function purgeTrash() {
+  if (!S.set.trashAuto) return false;
+  const len = S.trash.length, lim = now() - 7 * DAY;
+  S.trash = S.trash.filter(t => t.deleted > lim);
+  if (S.trash.length !== len) { save(); return true; }
+  return false;
+}
+function tick() { if (purgeTrash()) render(); checkRemind(); checkWeekly(); }
+
+/* =====================================================================
+   9. ACTIONS
+   ===================================================================== */
+function select(id) { S.view = id; setQuery(''); save(); }
+function addCategory(name) {
+  const c = { id: uid(), name: name.trim().slice(0, 80), closed: false, notes: [] };
+  S.categories.push(c); S.view = c.id; q = ''; $('#q').value = ''; save(); render();
+}
+function closeCat(c) { c.closed = true; if (S.view === c.id) S.view = 'all'; save(); render(); }
+function openCat(c) { c.closed = false; S.view = c.id; setQuery(''); save(); }
+
+/** Category delete: offer a backup first, then the strict two-step confirmation. Notes in a deleted category are NOT sent to the Trash. */
+function delCat(c) {
+  if (ro()) return;
+  const after = () => confirmDelete(`the category “${c.name}” and its ${c.notes.length} note(s) permanently (they will not go to the Trash)`, () => {
+    S.categories = S.categories.filter(x => x !== c);
+    if (S.view === c.id) S.view = 'all';
+    save(); render();
+  });
+  ask('Back up first?', 'Would you like to export/backup this category before deleting it?', [
+    { label: 'Cancel' },
+    { label: 'Export, then continue', fn: () => { exportCat(c); after(); } },
+    { label: 'Skip backup', fn: after }
+  ]);
+}
+function addNote(c) {
+  if (ro()) return;
+  const n = { id: uid(), title: '', text: '', pinned: false, locked: false, color: '', created: now(), updated: now() };
+  c.notes.unshift(n); save(); render(); focusNote(n.id, '.t');
+}
+function focusNote(id, sel = '.b') {
+  const t = document.querySelector(`[data-id="${id}"] ${sel}`);
+  if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); }
+}
+const togglePin = n => { if (ro()) return; n.pinned = !n.pinned; save(); render(); };
+const toggleLock = n => { if (ro()) return; n.locked = !n.locked; save(); render(); toast(n.locked ? 'Note locked' : 'Note unlocked'); };
+const setColor = (n, col) => { if (ro()) return; n.color = col; save(); render(); };
+function moveDialog(n, c) {
+  if (ro()) return;
+  const sel = el('select', { class: 'mvsel', 'aria-label': 'Destination category' },
+    ...S.categories.filter(x => x !== c).map(x => el('option', { value: x.id }, x.name)));
+  if (!sel.options.length) return toast('Create another category first');
+  openModal({ title: 'Move note', msg: 'Choose the destination category.', nodes: [sel], buttons: [
+    { label: 'Cancel' },
+    { label: 'Move', fn: () => {
+        const t = S.categories.find(x => x.id === sel.value); if (!t) return;
+        c.notes = c.notes.filter(x => x !== n); t.notes.unshift(n); save(); render(); toast(`Moved to “${t.name}”`);
+    } }] });
+}
+function resetAccents() {
+  if (ro()) return;
+  let k = 0; const clear = n => { if (n.color) { n.color = ''; k++; } };
+  S.categories.forEach(c => c.notes.forEach(clear)); S.trash.forEach(t => clear(t.note));
+  save(); render(); toast(k ? `Cleared ${k} accent color${k === 1 ? '' : 's'}` : 'No accent colors to clear');
+}
+
+/* ----- Trash ----- */
+function trashNote(n, c) {
+  if (ro() || n.locked) return;
+  c.notes = c.notes.filter(x => x !== n);
+  const item = { id: uid(), catId: c.id, catName: c.name, deleted: now(), note: n };
+  S.trash.unshift(item); save(); render();
+  if (S.set.undoToast) toast('Note deleted.', { label: 'Undo', fn: () => restoreItem(item) }, 5000);
+}
+function restoreItem(item) {
+  if (ro()) return;
+  const i = S.trash.indexOf(item); if (i < 0) return;
+  let c = S.categories.find(x => x.id === item.catId) || S.categories.find(x => x.name === item.catName);
+  if (!c) { c = { id: uid(), name: item.catName, closed: false, notes: [] }; S.categories.push(c); }   // original category was deleted
+  S.trash.splice(i, 1); c.notes.unshift(item.note); save(); render(); toast(`Restored to “${c.name}”`);
+}
+function deleteForever(item) {
+  if (ro()) return;
+  confirmDelete('this note permanently', () => { S.trash = S.trash.filter(x => x !== item); save(); render(); });
+}
+function emptyTrash() {
+  if (ro() || !S.trash.length) return;
+  confirmDelete(`all ${S.trash.length} item(s) in the Trash, permanently`, () => { S.trash = []; save(); render(); toast('Trash emptied'); });
+}
+
+/* ----- Nuclear "Delete ALL data": 3 steps, last one has a 10 s locked countdown ----- */
+function nukeStart() {
+  if (ro()) return;
+  ask('Are you sure you want to delete ALL data?', 'Every note, category and trashed item will be erased from this browser.', [
+    { label: 'Cancel' }, { label: 'Yes, continue', danger: true, fn: nukeWarn }]);
+}
+function nukeWarn() {
+  openModal({
+    title: 'Warning', msg: 'This will permanently erase everything. It is highly recommended to export your data first.',
+    nodes: [el('div', { class: 'qx' },
+      el('button', { class: 'btn', onclick: () => exportAll('pretty') }, 'Export (readable)'),
+      el('button', { class: 'btn', onclick: () => exportAll('min') }, 'Export (compact)'))],
+    buttons: [{ label: 'Cancel' }, { label: 'Continue', danger: true, fn: nukeFinal }]
+  });
+}
+function nukeFinal() {
+  const fill = el('span', { class: 'fill' }), txt = el('span', { class: 'txt' }, 'LAST CHANCE... [10s]');
+  const btn = el('button', { class: 'nuke', disabled: true }, fill, txt);
+  const end = now() + 10000;
+  const iv = setInterval(() => {
+    const s = Math.ceil((end - now()) / 1000);
+    if (s > 0) txt.textContent = `LAST CHANCE... [${s}s]`;
+    else { clearInterval(iv); btn.disabled = false; btn.classList.add('ready'); txt.textContent = 'ERASE EVERYTHING NOW'; }
+  }, 200);
+  openModal({ title: 'Final step', msg: 'The button unlocks when the countdown ends. Cancel any time before then.', nodes: [btn], buttons: [{ label: 'Cancel' }] });
+  modalCleanup = () => clearInterval(iv);            // set AFTER openModal, which resets it
+  btn.addEventListener('click', () => { if (!btn.disabled) { closeModal(); wipeAll(); } });
+}
+function wipeAll() {
+  S.categories = normCats([{ name: 'General' }]); S.trash = []; S.view = 'all'; S.lastBackup = now(); S.snooze = 0;
+  q = ''; $('#q').value = ''; save(); closePanel(); render(); toast('All data erased (your preferences were kept)');
+}
+
+/* =====================================================================
+   10. 3-DOTS CONTEXT MENUS
+   ===================================================================== */
+function openMenu(btn, items) {
+  const m = $('#menu');
+  if (menuBtn === btn && !m.hidden) return closeMenu();     // clicking the same ⋯ again closes it
+  m.replaceChildren();
+  items.forEach(it => {
+    if (it.sep) return m.append(el('hr'));
+    if (it.colors) {
+      const row = el('div', { class: 'cols' }, el('span', { class: 'cl' }, 'Color'));
+      [['', 'No color'], ...COLORS].forEach(([c, name]) => row.append(el('button', {
+        class: 'dot' + ((it.cur || '') === c ? ' on' : ''), title: name, 'aria-label': name, disabled: it.disabled,
+        style: c ? `background:${c}` : null, onclick: () => { closeMenu(); it.fn(c); } }, c ? '' : '×')));
+      return m.append(row);
+    }
+    m.append(el('button', { class: 'mi', role: 'menuitem', disabled: it.disabled, onclick: () => { closeMenu(); it.fn(); } }, it.label));
+  });
+  m.hidden = false; menuBtn = btn;
+  const r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(Math.max(8, r.right - w), innerWidth - w - 8) + 'px';
+  m.style.top = (r.bottom + 4 + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+}
+function closeMenu() { $('#menu').hidden = true; menuBtn = null; }
+
+function catMenu(btn, c) {
+  const r = S.set.readOnly;
+  openMenu(btn, [
+    { label: 'Edit (rename)', disabled: r, fn: () => { editing = c.id; if (c.closed) closedOpen = true; renderSide(); } },
+    { label: c.closed ? 'Reopen category' : 'Close category', fn: () => c.closed ? openCat(c) : closeCat(c) },
+    { label: 'Export category', fn: () => exportCat(c) },
+    { sep: 1 },
+    { label: 'Delete…', disabled: r, fn: () => delCat(c) }
+  ]);
+}
+function noteMenu(btn, n, c) {
+  const r = S.set.readOnly;
+  openMenu(btn, [
+    { label: 'Edit', disabled: r || n.locked, fn: () => focusNote(n.id) },
+    { colors: 1, cur: n.color, disabled: r, fn: col => setColor(n, col) },
+    { label: n.locked ? 'Unlock note' : 'Lock note', disabled: r, fn: () => toggleLock(n) },
+    { label: 'Move to…', disabled: r, fn: () => moveDialog(n, c) },
+    { sep: 1 },
+    { label: n.locked ? 'Delete (note is locked)' : 'Delete', disabled: r || n.locked, fn: () => trashNote(n, c) }
+  ]);
+}
+
+/* =====================================================================
+   11. RENDERING
+   ===================================================================== */
+function catRow(id, name, count, c) {
+  const row = el('div', { class: 'row' + (S.view === id && !q.trim() ? ' sel' : '') + (c && c.closed ? ' dim' : '') });
+  if (c && editing === c.id) {                       // inline rename
+    let done = false;
+    const commit = ok => { if (done) return; done = true; if (ok && inp.value.trim()) c.name = inp.value.trim().slice(0, 80); editing = null; save(); render(); };
+    const inp = el('input', { class: 'ren', value: c.name, maxlength: 80, 'aria-label': 'Rename category',
+      onkeydown: e => { if (e.key === 'Enter') commit(true); if (e.key === 'Escape') commit(false); },
+      onblur: () => commit(true) });
+    row.append(inp); setTimeout(() => { inp.focus(); inp.select(); });
+    return row;
+  }
+  row.append(el('button', { class: 'nm', title: name, onclick: () => c && c.closed ? openCat(c) : select(id) }, name),
+             el('span', { class: 'n' }, String(count)));
+  if (c) row.append(el('button', { class: 'ico', 'data-menu': '1', title: 'Category options', 'aria-label': 'Category options',
+    onclick: e => catMenu(e.currentTarget, c) }, '⋯'));
+  return row;
+}
+
+function renderSide() {
+  const box = $('#cats'); box.replaceChildren();
+  const searching = !!q.trim(), pinCount = S.categories.reduce((a, c) => a + c.notes.filter(n => n.pinned).length, 0);
+  if (S.set.pinMode === 'global') box.append(catRow('pins', 'Global Pins', pinCount));      // very top of the app
+  box.append(catRow('all', 'All notes', S.categories.reduce((a, c) => a + c.notes.length, 0)));
+  let hidden = 0;
+  S.categories.filter(c => !c.closed).forEach(c => {
+    const cnt = searching ? c.notes.filter(n => matches(n, c)).length : c.notes.length;
+    if (searching && !cnt) return;                  // search also filters the category list
+    if (!searching && S.set.hideEmpty && !c.notes.length && S.view !== c.id && editing !== c.id) { hidden++; return; }
+    box.append(catRow(c.id, c.name, cnt, c));
+  });
+  if (hidden) box.append(el('div', { class: 'hint' }, `${hidden} empty categor${hidden === 1 ? 'y' : 'ies'} hidden`));
+  const closed = S.categories.filter(c => c.closed);
+  if (closed.length) {                              // collapsed categories live here, fully saved
+    const d = el('details', { class: 'closed' }, el('summary', {}, `Closed (${closed.length})`));
+    d.open = closedOpen; d.addEventListener('toggle', () => closedOpen = d.open);
+    closed.forEach(c => d.append(catRow(c.id, c.name, c.notes.length, c)));
+    box.append(d);
+  }
+  $('#trashrow').replaceChildren(el('div', { class: 'row' + (S.view === 'trash' && !searching ? ' sel' : '') },
+    el('button', { class: 'nm', onclick: () => select('trash') }, 'Trash'), el('span', { class: 'n' }, String(S.trash.length))));
+}
+
+function card(n, c) {
+  const lock = n.locked || S.set.readOnly;
+  const chips = el('div', { class: 'chips' }), dup = el('div', { class: 'dup' });
+  const st = el('span', { class: 'st' }), cn = el('span', { class: 'cn' });
+  const title = el('input', { class: 't', placeholder: 'Title', value: n.title, 'aria-label': 'Note title', readonly: lock });
+  const body = el('textarea', { class: 'b', placeholder: 'Text, coordinates, reminders… (use #tags)', value: n.text, 'aria-label': 'Note text', readonly: lock });
+  const refresh = () => {
+    renderChips(chips, n);
+    st.hidden = !S.set.stamp; st.textContent = 'Created: ' + fmtDate(n.created); st.title = 'Edited: ' + fmtDate(n.updated);
+    const t = n.text.trim(); cn.hidden = !S.set.counter;
+    cn.textContent = `${n.text.length} chars · ${t ? t.split(/\s+/).length : 0} words`;
+    const d = S.set.dupes ? dupOf(n) : null; dup.hidden = !d; if (d) dup.textContent = `Possible duplicate: identical text exists in “${d.name}”`;
+  };
+  const onEdit = () => { n.title = title.value; n.text = body.value; n.updated = now(); dupCache = null; saveSoon(); refresh(); };
+  title.addEventListener('input', onEdit); body.addEventListener('input', onEdit);
+  refresh();
+  const e = el('div', { class: 'card' + (n.pinned ? ' pin' : '') + (n.color ? ' acc' : ''), 'data-id': n.id },
+    el('div', { class: 'hd' }, title,
+      el('button', { class: 'ico' + (n.pinned ? ' on' : ''), title: n.pinned ? 'Unpin' : 'Pin', disabled: S.set.readOnly, onclick: () => togglePin(n) }, n.pinned ? '★' : '☆'),
+      el('button', { class: 'ico', 'data-menu': '1', title: 'Note options', 'aria-label': 'Note options', onclick: ev => noteMenu(ev.currentTarget, n, c) }, '⋯')),
+    body, dup, chips,
+    el('div', { class: 'ft' }, st, cn, n.locked ? el('span', { class: 'lk' }, 'Locked') : null,
+      el('button', { class: 'ico sp', title: 'Copy note text to clipboard', onclick: ev => copy(n.text.trim() || n.title, ev.currentTarget) }, 'Copy')));
+  if (n.color) e.style.setProperty('--acc', n.color);
+  return e;
+}
+
+function renderTrash(m) {
+  const items = S.trash;
+  m.append(el('div', { class: 'top' }, el('h2', {}, 'Trash'), el('span', { class: 'cnt' }, `${items.length} item${items.length === 1 ? '' : 's'}`),
+    el('button', { class: 'btn danger', disabled: !items.length || S.set.readOnly, onclick: emptyTrash }, 'Empty Trash')));
+  m.append(el('p', { class: 'hint2' }, S.set.trashAuto ? 'Items are permanently removed 7 days after deletion.'
+    : 'Deleted notes stay here until you restore or delete them. Auto-empty can be enabled in Settings.'));
+  if (!items.length) return m.append(el('div', { class: 'empty' }, 'The Trash is empty.'));
+  m.append(el('div', { class: 'grid' }, ...items.map(it => {
+    const n = it.note, left = Math.max(0, Math.ceil((it.deleted + 7 * DAY - now()) / DAY));
+    const c = el('div', { class: 'card' + (n.color ? ' acc' : '') },
+      el('b', {}, n.title || '(untitled)'),
+      n.text ? el('div', { class: 'prev' }, n.text.slice(0, 600)) : null,
+      el('div', { class: 'ft' }, `From “${it.catName}” · Deleted ${fmtDate(it.deleted)}` + (S.set.trashAuto ? ` · purges in ${left}d` : '')),
+      el('div', { class: 'acts2' },
+        el('button', { class: 'btn', disabled: S.set.readOnly, onclick: () => restoreItem(it) }, 'Restore'),
+        el('button', { class: 'btn danger', disabled: S.set.readOnly, onclick: () => deleteForever(it) }, 'Delete permanently')));
+    if (n.color) c.style.setProperty('--acc', n.color);
+    return c;
+  })));
+}
+
+function renderMain() {
+  const m = $('#main'); m.replaceChildren();
+  const searching = !!q.trim();
+  if (!searching && S.view === 'trash') return renderTrash(m);
+  const isPins = !searching && S.view === 'pins' && S.set.pinMode === 'global';
+  const cat = !searching && !isPins && S.categories.find(c => c.id === S.view && !c.closed);
+  const groups = cat ? [cat] : S.categories.filter(c => searching || isPins || !c.closed);
+  // "Category" pin mode floats pins to the top; "Global" mode lists them in the Global Pins view instead.
+  const cmp = (a, b) => (S.set.pinMode === 'category' ? b.pinned - a.pinned : 0) || SORT[S.sort](a, b);
+  const shown = groups.map(c => ({ c, notes: c.notes.filter(n => matches(n, c) && (!isPins || n.pinned)).sort(cmp) }))
+                      .filter(g => cat || g.notes.length);
+  const count = shown.reduce((a, g) => a + g.notes.length, 0);
+
+  const sort = el('select', { 'aria-label': 'Sort notes', onchange: e => { S.sort = e.target.value; save(); renderMain(); } },
+    ...[['new', 'Newest first'], ['old', 'Oldest first'], ['edited', 'Recently edited'], ['az', 'A → Z']].map(([v, t]) => el('option', { value: v }, t)));
+  sort.value = S.sort;
+  m.append(el('div', { class: 'top' },
+    el('h2', {}, searching ? `Search: “${q.trim()}”` : isPins ? 'Global Pins' : cat ? cat.name : 'All notes'),
+    el('span', { class: 'cnt' }, `${count} note${count === 1 ? '' : 's'}`), sort,
+    cat ? el('button', { class: 'btn', disabled: S.set.readOnly, onclick: () => addNote(cat) }, '+ Note') : null));
+
+  if (!count) return m.append(el('div', { class: 'empty' }, searching ? 'No matches.' : isPins ? 'No pinned notes yet. Click ☆ on a note.'
+    : cat ? 'No notes yet. Click “+ Note”.' : S.categories.length ? 'Nothing here yet. Choose a category and add a note.' : 'Create a category to begin.'));
+  shown.forEach(({ c, notes }) => {
+    if (!cat) m.append(el('div', { class: 'gh', title: 'Open category', onclick: () => c.closed ? openCat(c) : select(c.id) }, c.name + (c.closed ? ' (closed)' : '')));
+    m.append(el('div', { class: 'grid' }, ...notes.map(n => card(n, c))));
+  });
+}
+function render() { closeMenu(); dupCache = null; renderSide(); renderMain(); }
+
+/* =====================================================================
+   12. SETTINGS PANEL (built once from this table, then synced to state)
+   ===================================================================== */
+const SET_UI = [
+  { h: 'Appearance' },
+  { k: 'dark', t: 'switch', l: 'Dark mode', d: 'Classic white / black toggle.' },
+  { k: 'themeSlider', t: 'switch', l: 'Use grayscale slider instead', d: 'Disables the toggle above. Only one theme mode is active at a time.' },
+  { k: 'gray', t: 'range', l: 'Grayscale', min: 0, max: 100, step: 1, ticks: ['White', 'Light gray', 'Slate', 'Dark gray', 'Black'] },
+  { k: 'compact', t: 'switch', l: 'Compact view', d: 'Tighter padding, margins and text spacing so hundreds of notes fit on screen.' },
+  { k: 'font', t: 'select', l: 'Font style', o: [['sans', 'Sans-serif (modern)'], ['serif', 'Serif (classic)'], ['mono', 'Monospace (code / data)']] },
+  { k: 'pattern', t: 'select', l: 'Background pattern', o: [['solid', 'Solid (flat)'], ['dots', 'Dot matrix'], ['grid', 'Light grid'], ['stripes', 'Thin vertical stripes']] },
+  { k: 'sidebarW', t: 'range', l: 'Sidebar width', min: 180, max: 480, step: 10, u: ' px' },
+  { k: 'opacity', t: 'range', l: 'Note opacity', min: 30, max: 100, step: 5, u: '%' },
+  { reset: 1 },
+  { h: 'Notes & search' },
+  { k: 'hideEmpty', t: 'switch', l: 'Hide empty categories', d: 'Categories with 0 notes disappear from the sidebar (the selected one stays).' },
+  { k: 'pinMode', t: 'select', l: 'Pin behavior', o: [['category', 'Pinned stay on top of their category'], ['global', 'Mirror into “Global Pins”']] },
+  { k: 'stamp', t: 'switch', l: 'Automatic timestamp', d: 'Show “Created: date time” on each note.' },
+  { k: 'dupes', t: 'switch', l: 'Duplicate note detector', d: 'Warn when a note’s text exactly matches another note.' },
+  { k: 'counter', t: 'switch', l: 'Character / word counter', d: 'Small count at the bottom of each note.' },
+  { k: 'searchScope', t: 'select', l: 'Search scope', o: [['deep', 'Deep: titles, text & coordinates'], ['titles', 'Note titles only']] },
+  { h: 'Safety & backup' },
+  { k: 'readOnly', t: 'switch', l: 'Global read-only mode', d: 'Freezes all editing and deletion. Browsing, searching and copying still work.' },
+  { k: 'undoToast', t: 'switch', l: 'Undo toast on delete', d: 'Shows “Note deleted. Undo” for 5 seconds.' },
+  { k: 'trashAuto', t: 'switch', l: 'Trash auto-empty', d: 'Permanently purge trashed notes after 7 days.' },
+  { k: 'exportFmt', t: 'select', l: 'Export format', o: [['pretty', 'Readable (indented)'], ['min', 'Compact (minified JSON)']] },
+  { k: 'weekly', t: 'switch', l: 'Auto-download weekly backup', d: 'Downloads a backup file every 7 days (runs while Notebox is open).' },
+  { remind: 1 },
+  { h: 'Danger zone' },
+  { nuke: 1 }
+];
+const UNITS = { sidebarW: ' px', opacity: '%' };
+const LIGHT = new Set(['gray', 'sidebarW', 'opacity', 'remindHours']);   // CSS-only changes: no re-render needed
+
+function buildSettings() {
+  const body = $('#setbody'); body.replaceChildren();
+  SET_UI.forEach(r => {
+    if (r.h) return body.append(el('h3', {}, r.h));
+    if (r.reset) return body.append(el('div', { class: 'set' },
+      el('div', { class: 'lbl' }, el('b', {}, 'Reset accent colors'), el('small', {}, 'Clears every custom note color back to grayscale.')),
+      el('button', { class: 'btn', id: 'resetacc', onclick: resetAccents }, 'Reset')));
+    if (r.nuke) return body.append(el('div', { class: 'set' },
+      el('div', { class: 'lbl' }, el('b', {}, 'Delete all data'), el('small', {}, 'Erases every note, category and the Trash. Takes 3 confirmation steps.')),
+      el('button', { class: 'btn redb', id: 'nukebtn', onclick: nukeStart }, 'Delete All Data…')));
+    if (r.remind) {
+      const opts = [el('optgroup', { label: 'Short' }, ...[['m30', '30 minutes'], ['m45', '45 minutes'], ['hc', 'Custom (hours)…']].map(([v, t]) => el('option', { value: v }, t))),
+        el('optgroup', { label: 'Daily' }, ...Array.from({ length: 25 }, (_, i) => el('option', { value: 'd' + (i + 1) }, `${i + 1} day${i ? 's' : ''}`))),
+        el('optgroup', { label: 'Maximum' }, el('option', { value: 'mo' }, '1 month'))];
+      return body.append(el('div', { class: 'set stack' },
+        el('div', { class: 'line' },
+          el('div', { class: 'lbl' }, el('b', {}, 'Backup reminder'), el('small', {}, 'Shows a dismissible banner by the Export button when a backup is due.')),
+          el('label', { class: 'sw' }, el('input', { type: 'checkbox', 'data-k': 'remindOn' }))),
+        el('div', { class: 'rd', id: 'rdbox' }, el('span', {}, 'Remind me after'), el('select', { 'data-k': 'remindSel' }, ...opts),
+          el('span', { id: 'hrw' }, 'every ', el('input', { type: 'number', class: 'num', min: 1, max: 720, 'data-k': 'remindHours', 'aria-label': 'Hours' }), ' hours'),
+          el('small', { id: 'lastbk' }))));
+    }
+    const ctl = r.t === 'switch' ? el('label', { class: 'sw' }, el('input', { type: 'checkbox', 'data-k': r.k }))
+      : r.t === 'select' ? el('select', { 'data-k': r.k }, ...r.o.map(([v, t]) => el('option', { value: v }, t)))
+      : el('span', { class: 'rg' }, el('input', { type: 'range', min: r.min, max: r.max, step: r.step, 'data-k': r.k }), r.u ? el('output', { 'data-o': r.k }) : null);
+    if (r.ticks) return body.append(el('div', { class: 'set stack', id: 'grayrow' },
+      el('div', { class: 'lbl' }, el('b', {}, r.l)), el('input', { type: 'range', min: r.min, max: r.max, step: r.step, 'data-k': r.k }),
+      el('div', { class: 'ticks' }, ...r.ticks.map(t => el('span', {}, t)))));
+    body.append(el('div', { class: 'set', 'data-row': r.k }, el('div', { class: 'lbl' }, el('b', {}, r.l), r.d ? el('small', {}, r.d) : null), ctl));
+  });
+}
+function syncSettings() {
+  const s = S.set;
+  document.querySelectorAll('#setbody [data-k]').forEach(i => {
+    if (i === document.activeElement && i.type === 'number') return;       // don't fight the user while typing
+    const v = s[i.dataset.k];
+    if (i.type === 'checkbox') i.checked = !!v; else i.value = v;
+  });
+  document.querySelectorAll('#setbody [data-o]').forEach(o => o.textContent = s[o.dataset.o] + (UNITS[o.dataset.o] || ''));
+  const dk = document.querySelector('[data-k=dark]'), gr = document.querySelector('[data-k=gray]');
+  dk.disabled = s.themeSlider; gr.disabled = !s.themeSlider;
+  document.querySelector('[data-row=dark]').classList.toggle('off', s.themeSlider);
+  $('#grayrow').classList.toggle('off', !s.themeSlider);
+  $('#rdbox').hidden = !s.remindOn; $('#hrw').hidden = s.remindSel !== 'hc';
+  $('#lastbk').textContent = 'Last backup: ' + fmtDate(S.lastBackup);
+  $('#resetacc').disabled = s.readOnly; $('#nukebtn').disabled = s.readOnly;
+}
+function onSetInput(e) {
+  const i = e.target.closest('[data-k]'); if (!i) return;
+  const k = i.dataset.k;
+  let v = i.type === 'checkbox' ? i.checked : (i.type === 'range' || i.type === 'number') ? +i.value : i.value;
+  if (k === 'remindHours') v = num(v, 1, 720, 2);
+  S.set[k] = v;
+  if (k === 'themeSlider' && v) S.set.gray = S.set.dark ? 100 : 0;        // start the slider where the toggle was
+  if (k === 'weekly' && v && !S.lastWeekly) S.lastWeekly = now();
+  if (k === 'pinMode' && v !== 'global' && S.view === 'pins') S.view = 'all';
+  saveSoon(); applySettings(); syncSettings();
+  if (!LIGHT.has(k)) render();
+  if (k.startsWith('remind')) checkRemind();
+}
+function openPanel() { closeMenu(); syncSettings(); $('#setov').hidden = false; $('#setx').focus(); }
+function closePanel() { $('#setov').hidden = true; }
+
+/* =====================================================================
+   13. EVENT WIRING
+   ===================================================================== */
+$('#addcat').addEventListener('submit', e => {
+  e.preventDefault(); if (ro()) return;
+  const v = $('#newcat').value.trim(); if (!v) return;
+  $('#newcat').value = ''; addCategory(v);
+});
+$('#q').addEventListener('input', e => { q = e.target.value; render(); });
+$('#theme').addEventListener('click', () => { S.set.dark = !S.set.dark; save(); applySettings(); syncSettings(); });
+$('#exp').addEventListener('click', () => exportAll());
+$('#imp').addEventListener('click', () => { if (!ro()) $('#file').click(); });
+$('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
+$('#gear').addEventListener('click', openPanel);
+$('#setx').addEventListener('click', closePanel);
+$('#setov').addEventListener('mousedown', e => { if (e.target.id === 'setov') closePanel(); });
+$('#setbody').addEventListener('input', onSetInput);
+$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+$('#remx').addEventListener('click', () => { S.snooze = now(); save(); $('#remind').hidden = true; });
+document.addEventListener('mousedown', e => { if (!$('#menu').hidden && !e.target.closest('#menu,[data-menu]')) closeMenu(); });
+addEventListener('scroll', closeMenu, true);
+addEventListener('resize', () => { closeMenu(); placeRemind(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!$('#modal').hidden) closeModal();
+    else if (!$('#menu').hidden) closeMenu();
+    else if (!$('#setov').hidden) closePanel();
+    else if (document.activeElement === $('#q')) setQuery('');
+  }
+  if (e.key === '/' && $('#modal').hidden && $('#setov').hidden && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); }
+});
+
+/* =====================================================================
+   14. START
+   ===================================================================== */
+buildSettings();
+applySettings();
+render();
+tick();
+setInterval(tick, 30000);
+})();
+</script>
+</body>
+</html>
